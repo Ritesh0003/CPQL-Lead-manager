@@ -92,6 +92,9 @@ export default function LeadManagement() {
     status: 'new',
     vendorNotes: '',
     partnerId: '',
+    agencyId: '',
+    sourceId: '',
+    subsourceId: '',
     callRecordingUrl: '',
     callAnalysis: null as any,
     tags: [] as string[]
@@ -105,11 +108,22 @@ export default function LeadManagement() {
   const [statusUpdate, setStatusUpdate] = useState({
     leadIds: [] as string[],
     status: '',
-    notes: ''
+    notes: '',
+    createTask: false,
+    taskTitle: '',
+    taskDueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+    taskAssignedTo: ''
   });
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [leadToDelete, setLeadToDelete] = useState<string | null>(null);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState(false);
+  const [agencies, setAgencies] = useState<any[]>([]);
+  const [sources, setSources] = useState<any[]>([]);
+  const [subsources, setSubsources] = useState<any[]>([]);
+  const [isHierarchyModalOpen, setIsHierarchyModalOpen] = useState(false);
+  const [currentAgency, setCurrentAgency] = useState<any>(null);
+  const [currentSource, setCurrentSource] = useState<any>(null);
   const [isReturnModalOpen, setIsReturnModalOpen] = useState(false);
   const [returnLeadId, setReturnLeadId] = useState('');
   const [returnReason, setReturnReason] = useState('');
@@ -125,7 +139,7 @@ export default function LeadManagement() {
   const [isTranscribing, setIsTranscribing] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const [feedbackView, setFeedbackView] = useState<'vendor' | 'sm' | 'tasks' | 'call_analysis'>('vendor');
+  const [feedbackView, setFeedbackView] = useState<'vendor' | 'sm' | 'history' | 'tasks' | 'call_analysis'>('history');
   const [smViewMode, setSmViewMode] = useState<'all' | 'my'>('my');
   const [tasks, setTasks] = useState<any[]>([]);
   const [allTasks, setAllTasks] = useState<any[]>([]);
@@ -143,6 +157,9 @@ export default function LeadManagement() {
     dateFrom: '',
     dateTo: '',
     status: '',
+    agencyId: '',
+    sourceId: '',
+    subsourceId: '',
     scoreMin: '',
     scoreMax: '',
     taskDateFrom: '',
@@ -234,6 +251,18 @@ export default function LeadManagement() {
       setAllTasks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     }, (error) => handleFirestoreError(error, OperationType.LIST, 'tasks'));
 
+    const unsubscribeAgencies = onSnapshot(collection(db, 'agencies'), (snapshot) => {
+      setAgencies(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'agencies'));
+
+    const unsubscribeSources = onSnapshot(collection(db, 'sources'), (snapshot) => {
+      setSources(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'sources'));
+
+    const unsubscribeSubsources = onSnapshot(collection(db, 'subsources'), (snapshot) => {
+      setSubsources(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    }, (error) => handleFirestoreError(error, OperationType.LIST, 'subsources'));
+
     return () => {
       unsubscribeSettings();
       unsubscribeLeads();
@@ -242,6 +271,9 @@ export default function LeadManagement() {
       unsubscribeAdmins();
       unsubscribePartners();
       unsubscribeAllTasks();
+      unsubscribeAgencies();
+      unsubscribeSources();
+      unsubscribeSubsources();
     };
   }, [profile, isAdmin, isSM, isPartner, isVendor, smViewMode]);
 
@@ -290,6 +322,42 @@ export default function LeadManagement() {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `tasks/${taskId}`);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedLeadIds.length === 0) return;
+    
+    try {
+      const batch = writeBatch(db);
+      selectedLeadIds.forEach(id => {
+        batch.delete(doc(db, 'leads', id));
+      });
+      await batch.commit();
+      setSelectedLeadIds([]);
+      setIsBulkDeleteModalOpen(false);
+      showToast(`${selectedLeadIds.length} leads deleted successfully`, 'success');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, 'leads/bulk');
+    }
+  };
+
+  const handleHierarchyAction = async (type: 'agency' | 'source' | 'subsource', action: 'add' | 'delete', data: any) => {
+    const collectionName = type === 'agency' ? 'agencies' : type === 'source' ? 'sources' : 'subsources';
+    try {
+      if (action === 'add') {
+        await addDoc(collection(db, collectionName), {
+          ...data,
+          partnerId: profile?.vendorCompanyId || profile?.uid,
+          createdAt: serverTimestamp()
+        });
+        showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} added successfully`, 'success');
+      } else if (action === 'delete') {
+        await deleteDoc(doc(db, collectionName, data.id));
+        showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} deleted successfully`, 'success');
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, collectionName);
     }
   };
 
@@ -546,6 +614,9 @@ export default function LeadManagement() {
         status: 'new', 
         vendorNotes: '', 
         partnerId: '', 
+        agencyId: '',
+        sourceId: '',
+        subsourceId: '',
         callRecordingUrl: '', 
         callAnalysis: null, 
         tags: [] 
@@ -760,6 +831,9 @@ export default function LeadManagement() {
         priority: editLeadData.priority || 'Medium',
         budget: editLeadData.budget,
         possession: editLeadData.possession,
+        agencyId: editLeadData.agencyId || '',
+        sourceId: editLeadData.sourceId || '',
+        subsourceId: editLeadData.subsourceId || '',
         callRecordingUrl: editLeadData.callRecordingUrl || '',
         callAnalysis: editLeadData.callAnalysis || null,
         tags: editLeadData.tags || [],
@@ -795,13 +869,21 @@ export default function LeadManagement() {
       setIsLostModalOpen(true);
       return;
     }
-    setStatusUpdate({ leadIds: [leadId], status, notes: '' });
+    setStatusUpdate({ 
+      leadIds: [leadId], 
+      status, 
+      notes: '',
+      createTask: false,
+      taskTitle: '',
+      taskDueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      taskAssignedTo: ''
+    });
     setIsStatusModalOpen(true);
   };
 
   const handleStatusSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { leadIds, status, notes } = statusUpdate;
+    const { leadIds, status, notes, createTask, taskTitle, taskDueDate, taskAssignedTo } = statusUpdate;
     const batch = writeBatch(db);
     
     leadIds.forEach(id => {
@@ -816,13 +898,35 @@ export default function LeadManagement() {
           updatedBy: profile?.displayName
         })
       });
+
+      if (createTask && taskTitle && taskAssignedTo) {
+        const taskRef = doc(collection(db, 'tasks'));
+        batch.set(taskRef, {
+          leadId: id,
+          title: taskTitle,
+          assignedTo: taskAssignedTo,
+          dueDate: taskDueDate,
+          createdBy: profile?.uid,
+          createdAt: serverTimestamp(),
+          completed: false
+        });
+      }
     });
 
     try {
       await batch.commit();
       setIsStatusModalOpen(false);
-      setStatusUpdate({ leadIds: [], status: '', notes: '' });
+      setStatusUpdate({ 
+        leadIds: [], 
+        status: '', 
+        notes: '',
+        createTask: false,
+        taskTitle: '',
+        taskDueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+        taskAssignedTo: ''
+      });
       if (leadIds.length > 1) setSelectedLeadIds([]);
+      showToast('Status updated successfully.', 'success');
     } catch (error) {
       handleFirestoreError(error, OperationType.WRITE, 'leads/status-update');
     }
@@ -913,7 +1017,15 @@ export default function LeadManagement() {
       return;
     }
 
-    setStatusUpdate({ leadIds: selectedLeadIds, status, notes: '' });
+    setStatusUpdate({ 
+      leadIds: selectedLeadIds, 
+      status, 
+      notes: '',
+      createTask: false,
+      taskTitle: '',
+      taskDueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0],
+      taskAssignedTo: ''
+    });
     setIsStatusModalOpen(true);
   };
 
@@ -1100,6 +1212,9 @@ export default function LeadManagement() {
     if (filters.vendorId && lead.partnerId !== filters.vendorId) return false;
     if (filters.smId && lead.smId !== filters.smId) return false;
     if (filters.status && lead.status !== filters.status) return false;
+    if (filters.agencyId && lead.agencyId !== filters.agencyId) return false;
+    if (filters.sourceId && lead.sourceId !== filters.sourceId) return false;
+    if (filters.subsourceId && lead.subsourceId !== filters.subsourceId) return false;
     
     if (filters.dateFrom || filters.dateTo) {
       const leadDate = lead.createdAt?.toDate ? lead.createdAt.toDate() : new Date(lead.createdAt);
@@ -1212,19 +1327,19 @@ export default function LeadManagement() {
       animate={{ opacity: 1, y: 0 }}
       className="space-y-6 md:space-y-8"
     >
-      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-3 md:gap-4">
         <div>
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-900 tracking-tight">Lead Management</h1>
-          <p className="text-sm md:text-base text-gray-500 mt-1">
+          <h1 className="text-xl md:text-3xl font-bold text-gray-900 tracking-tight">Lead Management</h1>
+          <p className="text-xs md:text-base text-gray-500 mt-1">
             {isSM ? `Manage your assigned leads and track progress.` : `Track and manage leads across all projects.`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2 md:gap-3 w-full md:w-auto">
           {isSM && (
-            <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto mb-2 md:mb-0 md:mr-4">
+            <div className="flex bg-gray-100 p-1 rounded-xl w-full md:w-auto mb-1 md:mb-0 md:mr-4">
               <button
                 onClick={() => setSmViewMode('my')}
-                className={`flex-1 md:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                className={`flex-1 md:flex-none px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all ${
                   smViewMode === 'my' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -1232,7 +1347,7 @@ export default function LeadManagement() {
               </button>
               <button
                 onClick={() => setSmViewMode('all')}
-                className={`flex-1 md:flex-none px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                className={`flex-1 md:flex-none px-4 py-1.5 md:py-2 text-[10px] md:text-xs font-bold rounded-lg transition-all ${
                   smViewMode === 'all' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
@@ -1240,22 +1355,38 @@ export default function LeadManagement() {
               </button>
             </div>
           )}
-          <div className="flex flex-wrap gap-2 w-full md:w-auto">
+          <div className="flex overflow-x-auto sm:flex-wrap gap-2 w-full md:w-auto pb-1 md:pb-0 scrollbar-hide snap-x">
+            {selectedLeadIds.length > 0 && (
+              <button
+                onClick={() => setIsBulkDeleteModalOpen(true)}
+                className="snap-start shrink-0 flex items-center justify-center gap-1.5 md:gap-2 bg-red-50 text-red-600 border border-red-100 px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-red-100 transition-all shadow-sm text-[11px] md:text-sm"
+              >
+                <Trash2 className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                <span>Delete {selectedLeadIds.length} leads</span>
+              </button>
+            )}
             <button
               onClick={handleExportLeads}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-900 px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm md:text-base"
+              className="snap-start shrink-0 flex items-center justify-center gap-1.5 md:gap-2 bg-white border border-gray-200 text-gray-900 px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-[11px] md:text-sm"
             >
-              <Download className="w-4 h-4 md:w-5 md:h-5" />
-              <span className="hidden sm:inline">Export</span>
+              <Download className="w-3.5 h-3.5 md:w-4 md:h-4" />
+              <span>Export</span>
             </button>
             {(isPartner || isVendor || isAdmin) && (
               <>
                 <button
                   onClick={() => setIsIntegrationModalOpen(true)}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-900 px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm md:text-base"
+                  className="snap-start shrink-0 flex items-center justify-center gap-1.5 md:gap-2 bg-white border border-gray-200 text-gray-900 px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-[11px] md:text-sm"
                 >
-                  <RefreshCw className="w-4 h-4 md:w-5 md:h-5" />
-                  <span className="hidden sm:inline">Integrations</span>
+                  <RefreshCw className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <span>Integrations</span>
+                </button>
+                <button
+                  onClick={() => setIsHierarchyModalOpen(true)}
+                  className="snap-start shrink-0 flex items-center justify-center gap-1.5 md:gap-2 bg-white border border-gray-200 text-gray-900 px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-[11px] md:text-sm"
+                >
+                  <Filter className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <span>Hierarchy</span>
                 </button>
                 <button
                   onClick={() => {
@@ -1263,17 +1394,17 @@ export default function LeadManagement() {
                     setBulkUploadVendor('');
                     setIsBulkModalOpen(true);
                   }}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-white border border-gray-200 text-gray-900 px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-sm md:text-base"
+                  className="snap-start shrink-0 flex items-center justify-center gap-1.5 md:gap-2 bg-white border border-gray-200 text-gray-900 px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-gray-50 transition-all shadow-sm text-[11px] md:text-sm"
                 >
-                  <Upload className="w-4 h-4 md:w-5 md:h-5" />
-                  <span className="hidden sm:inline">Bulk Upload</span>
+                  <Upload className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <span>Bulk Upload</span>
                 </button>
                 <button
                   onClick={() => setIsModalOpen(true)}
-                  className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-gray-900 text-white px-4 md:px-6 py-2.5 md:py-3 rounded-xl font-bold hover:bg-gray-800 transition-all shadow-lg hover:shadow-xl active:scale-95 text-sm md:text-base"
+                  className="snap-start shrink-0 flex items-center justify-center gap-1.5 md:gap-2 bg-gray-900 text-white px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl font-bold hover:bg-gray-800 transition-all shadow-sm md:shadow-lg hover:shadow-xl active:scale-95 text-[11px] md:text-sm"
                 >
-                  <Plus className="w-4 h-4 md:w-5 md:h-5" />
-                  Drop Lead
+                  <Plus className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                  <span>Drop Lead</span>
                 </button>
               </>
             )}
@@ -1286,24 +1417,24 @@ export default function LeadManagement() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
-          className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6"
+          className="grid grid-cols-2 md:grid-cols-4 gap-2 md:gap-6"
         >
-          <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-4 md:p-6 rounded-2xl md:rounded-3xl text-white shadow-xl shadow-blue-200/50 relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
-            <p className="text-blue-100 text-xs md:text-sm font-bold uppercase tracking-wider mb-1">My Total Leads</p>
-            <p className="text-3xl md:text-4xl font-black">{myLeadsCount}</p>
+          <div className="bg-gradient-to-br from-blue-600 to-blue-700 p-3 md:p-6 rounded-xl md:rounded-3xl text-white shadow-md md:shadow-xl shadow-blue-200/50 relative overflow-hidden group">
+            <div className="absolute top-0 right-0 w-24 md:w-32 h-24 md:h-32 bg-white/10 rounded-full blur-2xl -mr-8 md:-mr-10 -mt-8 md:-mt-10 transition-transform group-hover:scale-110"></div>
+            <p className="text-blue-100 text-[10px] md:text-sm font-bold uppercase tracking-wider mb-0.5 md:mb-1">My Total Leads</p>
+            <p className="text-2xl md:text-4xl font-black">{myLeadsCount}</p>
           </div>
-          <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-            <p className="text-gray-400 text-xs md:text-sm font-bold uppercase tracking-wider mb-1">New / Pending</p>
-            <p className="text-3xl md:text-4xl font-black text-gray-900">{pendingLeadsCount}</p>
+          <div className="bg-white p-3 md:p-6 rounded-xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+            <p className="text-gray-400 text-[10px] md:text-sm font-bold uppercase tracking-wider mb-0.5 md:mb-1">New / Pending</p>
+            <p className="text-2xl md:text-4xl font-black text-gray-900">{pendingLeadsCount}</p>
           </div>
-          <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-            <p className="text-gray-400 text-xs md:text-sm font-bold uppercase tracking-wider mb-1">Converted</p>
-            <p className="text-3xl md:text-4xl font-black text-green-600">{leads.filter(l => l.smId === profile.uid && l.status === 'converted').length}</p>
+          <div className="bg-white p-3 md:p-6 rounded-xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+            <p className="text-gray-400 text-[10px] md:text-sm font-bold uppercase tracking-wider mb-0.5 md:mb-1">Converted</p>
+            <p className="text-2xl md:text-4xl font-black text-green-600">{leads.filter(l => l.smId === profile.uid && l.status === 'converted').length}</p>
           </div>
-          <div className="bg-white p-4 md:p-6 rounded-2xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
-            <p className="text-gray-400 text-xs md:text-sm font-bold uppercase tracking-wider mb-1">Conversion Rate</p>
-            <p className="text-3xl md:text-4xl font-black text-blue-600">
+          <div className="bg-white p-3 md:p-6 rounded-xl md:rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow">
+            <p className="text-gray-400 text-[10px] md:text-sm font-bold uppercase tracking-wider mb-0.5 md:mb-1">Conversion Rate</p>
+            <p className="text-2xl md:text-4xl font-black text-blue-600">
               {myLeadsCount > 0 ? ((leads.filter(l => l.smId === profile.uid && l.status === 'converted').length / myLeadsCount) * 100).toFixed(1) : 0}%
             </p>
           </div>
@@ -1317,22 +1448,22 @@ export default function LeadManagement() {
             initial={{ y: 100, opacity: 0, x: '-50%' }}
             animate={{ y: 0, opacity: 1, x: '-50%' }}
             exit={{ y: 100, opacity: 0, x: '-50%' }}
-            className="fixed bottom-4 md:bottom-8 left-1/2 bg-gray-900 text-white px-4 md:px-6 py-3 md:py-4 rounded-2xl shadow-2xl flex flex-wrap items-center gap-4 md:gap-6 z-50 w-[90%] md:w-auto justify-center md:justify-start"
+            className="fixed bottom-24 md:bottom-8 left-1/2 bg-gray-900 text-white px-3 md:px-6 py-2.5 md:py-4 rounded-xl md:rounded-2xl shadow-2xl flex flex-wrap items-center gap-3 md:gap-6 z-50 w-[94%] md:w-auto justify-center md:justify-start"
           >
-            <div className="flex items-center gap-3 pr-4 md:pr-6 border-r border-gray-700">
-              <div className="bg-blue-500 text-white w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold">
+            <div className="flex items-center gap-2 md:gap-3 pr-3 md:pr-6 border-r border-gray-700">
+              <div className="bg-blue-500 text-white w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-[10px] md:text-xs font-bold">
                 {selectedLeadIds.length}
               </div>
-              <span className="text-sm font-medium hidden sm:inline">Leads Selected</span>
+              <span className="text-xs md:text-sm font-medium hidden sm:inline">Leads Selected</span>
             </div>
             
-            <div className="flex flex-wrap items-center gap-2 md:gap-4">
+            <div className="flex flex-wrap items-center gap-1.5 md:gap-4">
               {(isAdmin || isSM) && (
-                <div className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-gray-400 hidden sm:block" />
+                <div className="flex items-center gap-1 md:gap-2">
+                  <Check className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 hidden sm:block" />
                   <select
                     onChange={(e) => handleBulkStatusUpdate(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-xs md:text-sm rounded-lg px-2 md:px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none max-w-[120px] md:max-w-none"
+                    className="bg-gray-800 border border-gray-700 text-[10px] md:text-sm rounded-md md:rounded-lg px-1.5 md:px-3 py-1 md:py-1.5 focus:ring-2 focus:ring-blue-500 outline-none max-w-[90px] md:max-w-none"
                     value=""
                   >
                     <option value="" disabled>Status</option>
@@ -1344,11 +1475,11 @@ export default function LeadManagement() {
               )}
 
               {(isAdmin || isSM || isPartner || isVendor) && (
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-gray-400 hidden sm:block" />
+                <div className="flex items-center gap-1 md:gap-2">
+                  <User className="w-3.5 h-3.5 md:w-4 md:h-4 text-gray-400 hidden sm:block" />
                   <select
                     onChange={(e) => handleBulkAssignSM(e.target.value)}
-                    className="bg-gray-800 border border-gray-700 text-xs md:text-sm rounded-lg px-2 md:px-3 py-1.5 focus:ring-2 focus:ring-blue-500 outline-none max-w-[120px] md:max-w-none"
+                    className="bg-gray-800 border border-gray-700 text-[10px] md:text-sm rounded-md md:rounded-lg px-1.5 md:px-3 py-1 md:py-1.5 focus:ring-2 focus:ring-blue-500 outline-none max-w-[90px] md:max-w-none"
                     value=""
                   >
                     <option value="" disabled>Assign SM</option>
@@ -1359,7 +1490,7 @@ export default function LeadManagement() {
 
               <button
                 onClick={() => setSelectedLeadIds([])}
-                className="text-xs md:text-sm text-gray-400 hover:text-white transition-colors ml-1 md:ml-2"
+                className="text-[10px] md:text-sm text-gray-400 hover:text-white transition-colors ml-0.5 md:ml-2 font-bold"
               >
                 Cancel
               </button>
@@ -1373,26 +1504,26 @@ export default function LeadManagement() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
-        className="bg-white p-2 md:p-3 rounded-2xl border border-gray-100 shadow-xl shadow-gray-200/50"
+        className="bg-white p-2 border border-gray-100 shadow-sm rounded-xl md:rounded-2xl"
       >
-        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-2">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-1.5 md:gap-2">
           <div className="flex-1 relative">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 md:w-5 md:h-5" />
             <input
               type="text"
               placeholder="Search leads by name or ID"
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-              className="w-full pl-12 pr-4 py-3 bg-gray-50/50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-gray-900 focus:bg-white outline-none transition-all text-sm md:text-base"
+              className="w-full pl-9 pr-4 py-2 md:py-3 bg-gray-50/50 border border-gray-100 rounded-lg md:rounded-xl focus:ring-2 focus:ring-gray-900 focus:bg-white outline-none transition-all text-xs md:text-base"
             />
           </div>
           <button 
             onClick={() => setIsFilterOpen(!isFilterOpen)}
-            className={`flex items-center justify-center gap-2 px-6 py-3 rounded-xl border transition-all font-medium text-sm md:text-base ${
+            className={`flex items-center justify-center gap-2 px-4 py-2 md:px-6 md:py-3 rounded-lg md:rounded-xl border transition-all font-medium text-xs md:text-base ${
               isFilterOpen ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'
             }`}
           >
-            <Filter className="w-4 h-4" />
+            <Filter className="w-3.5 h-3.5 md:w-4 md:h-4" />
             Filters
           </button>
         </div>
@@ -1455,6 +1586,44 @@ export default function LeadManagement() {
               >
                 <option value="">All Statuses</option>
                 {settings.statuses.map((s: string) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Agency</label>
+              <select
+                value={filters.agencyId}
+                onChange={(e) => setFilters({ ...filters, agencyId: e.target.value, sourceId: '', subsourceId: '' })}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900"
+              >
+                <option value="">All Agencies</option>
+                {agencies.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Source</label>
+              <select
+                value={filters.sourceId}
+                onChange={(e) => setFilters({ ...filters, sourceId: e.target.value, subsourceId: '' })}
+                disabled={!filters.agencyId}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900 disabled:opacity-50"
+              >
+                <option value="">All Sources</option>
+                {sources.filter(s => s.agencyId === filters.agencyId).map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Subsource</label>
+              <select
+                value={filters.subsourceId}
+                onChange={(e) => setFilters({ ...filters, subsourceId: e.target.value })}
+                disabled={!filters.sourceId}
+                className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900 disabled:opacity-50"
+              >
+                <option value="">All Subsources</option>
+                {subsources.filter(ss => ss.sourceId === filters.sourceId).map(ss => <option key={ss.id} value={ss.id}>{ss.name}</option>)}
               </select>
             </div>
 
@@ -1531,7 +1700,7 @@ export default function LeadManagement() {
             <div className="flex items-end">
               <button
                 onClick={() => setFilters({
-                  search: '', projectId: '', vendorId: '', smId: '', dateFrom: '', dateTo: '', status: '', scoreMin: '', scoreMax: '', taskDateFrom: '', taskDateTo: '', tags: ''
+                  search: '', projectId: '', vendorId: '', smId: '', agencyId: '', sourceId: '', subsourceId: '', dateFrom: '', dateTo: '', status: '', scoreMin: '', scoreMax: '', taskDateFrom: '', taskDateTo: '', tags: ''
                 })}
                 className="w-full px-4 py-2 bg-gray-100 text-gray-600 rounded-lg text-sm font-bold hover:bg-gray-200 transition-all"
               >
@@ -1549,41 +1718,41 @@ export default function LeadManagement() {
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ delay: 0.3 }}
-        className="mt-6 p-6 bg-gradient-to-r from-gray-900 via-indigo-950 to-indigo-900 rounded-3xl shadow-2xl relative overflow-hidden group"
+        className="mt-4 md:mt-6 p-4 md:p-6 bg-gradient-to-r from-gray-900 via-indigo-950 to-indigo-900 rounded-2xl md:rounded-3xl shadow-lg relative overflow-hidden group"
       >
         <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-3xl group-hover:bg-white/10 transition-all duration-500"></div>
         <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/5 rounded-full translate-y-1/2 -translate-x-1/2 blur-2xl group-hover:bg-indigo-500/10 transition-all duration-500"></div>
 
-        <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2 bg-indigo-500/20 rounded-xl backdrop-blur-md border border-indigo-400/20">
-                <Sparkles className="w-5 h-5 text-indigo-300" />
+        <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-4 md:gap-6">
+          <div className="flex-1 w-full">
+            <div className="flex items-center gap-2 md:gap-3 mb-1.5 md:mb-2">
+              <div className="p-1.5 md:p-2 bg-indigo-500/20 rounded-lg md:rounded-xl backdrop-blur-md border border-indigo-400/20">
+                <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-indigo-300" />
               </div>
-              <h3 className="text-lg font-black text-white tracking-tight">Lead Portfolio Summary</h3>
+              <h3 className="text-base md:text-lg font-black text-white tracking-tight">Lead Portfolio Summary</h3>
             </div>
             {!collectiveCallSummary && !isGeneratingCollectiveSummary ? (
-              <p className="text-indigo-200/60 text-sm max-w-xl">
+              <p className="text-indigo-200/60 text-xs md:text-sm max-w-xl">
                 Get a high-level intelligence summary of all {sortedLeads.length} leads in the current view. 
                 AI will analyze common themes, customer sentiment, and strategic blockers.
               </p>
             ) : isGeneratingCollectiveSummary ? (
-              <div className="flex items-center gap-4 py-2">
+              <div className="flex items-center gap-3 py-1.5 md:py-2">
                 <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                  <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                  <div className="w-2 h-2 bg-indigo-400 rounded-full animate-bounce"></div>
+                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                  <div className="w-1.5 h-1.5 bg-indigo-400 rounded-full animate-bounce"></div>
                 </div>
-                <p className="text-indigo-300 text-sm font-bold uppercase tracking-widest animate-pulse">Scanning voice intelligence & history...</p>
+                <p className="text-indigo-300 text-xs text-sm font-bold uppercase tracking-widest animate-pulse">Scanning voice intelligence & history...</p>
               </div>
             ) : (
-              <div className="space-y-4">
-                <p className="text-indigo-50 text-sm leading-relaxed border-l-2 border-indigo-500/50 pl-4 py-1 italic">
+              <div className="space-y-3 md:space-y-4">
+                <p className="text-indigo-50 text-xs md:text-sm leading-relaxed border-l-2 border-indigo-500/50 pl-3 md:pl-4 py-1 italic">
                   "{collectiveCallSummary.summary}"
                 </p>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap gap-1.5 md:gap-2">
                   {collectiveCallSummary.topPainPoints?.map((pt: string, i: number) => (
-                    <span key={i} className="px-3 py-1 bg-white/5 border border-white/10 rounded-full text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
+                    <span key={i} className="px-2 md:px-3 py-0.5 md:py-1 bg-white/5 border border-white/10 rounded-full text-[9px] md:text-[10px] font-bold text-indigo-300 uppercase tracking-wider">
                       {pt}
                     </span>
                   ))}
@@ -1592,31 +1761,133 @@ export default function LeadManagement() {
             )}
           </div>
           
-          <div className="flex flex-col items-center md:items-end gap-3 min-w-[200px]">
+          <div className="flex flex-col items-start md:items-end w-full md:w-auto gap-2 md:gap-3 md:min-w-[200px]">
             <button
               onClick={handleGenerateCollectiveSummary}
               disabled={isGeneratingCollectiveSummary || sortedLeads.length === 0}
-              className="w-full md:w-auto px-6 py-3 bg-white text-indigo-900 rounded-2xl font-black text-sm uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-xl shadow-indigo-500/20 disabled:opacity-50 flex items-center justify-center gap-2 group/btn"
+              className="w-full md:w-auto px-4 md:px-6 py-2.5 md:py-3 bg-white text-indigo-900 rounded-xl md:rounded-2xl font-black text-[10px] md:text-sm uppercase tracking-widest hover:bg-indigo-50 transition-all shadow-md md:shadow-xl shadow-indigo-500/20 disabled:opacity-50 flex items-center justify-center gap-2 group/btn"
             >
-              <RefreshCw className={`w-4 h-4 ${isGeneratingCollectiveSummary ? 'animate-spin' : 'group-hover/btn:rotate-180 transition-transform duration-500'}`} />
+              <RefreshCw className={`w-3 h-3 md:w-4 md:h-4 ${isGeneratingCollectiveSummary ? 'animate-spin' : 'group-hover/btn:rotate-180 transition-transform duration-500'}`} />
               {collectiveCallSummary ? 'Update Intelligence' : 'Generate Summary'}
             </button>
             {collectiveCallSummary?.strategicAdvice && (
-              <div className="bg-indigo-400/10 border border-indigo-400/20 rounded-xl p-3 max-w-[280px]">
-                <div className="flex items-center gap-2 mb-1 text-indigo-300">
+              <div className="bg-indigo-400/10 border border-indigo-400/20 rounded-xl p-2.5 md:p-3 w-full md:max-w-[280px]">
+                <div className="flex items-center gap-1.5 md:gap-2 mb-1 text-indigo-300">
                   <Bot className="w-3 h-3" />
-                  <span className="text-[10px] font-black uppercase tracking-tighter">Strategic Advice</span>
+                  <span className="text-[9px] md:text-[10px] font-black uppercase tracking-tighter">Strategic Advice</span>
                 </div>
-                <p className="text-[11px] text-indigo-100 font-medium leading-tight">{collectiveCallSummary.strategicAdvice}</p>
+                <p className="text-[10px] md:text-[11px] text-indigo-100 font-medium leading-tight">{collectiveCallSummary.strategicAdvice}</p>
               </div>
             )}
           </div>
         </div>
       </motion.div>
 
-      {/* Leads Table */}
-      <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="overflow-x-auto">
+      {/* Leads Table & Mobile List */}
+      <div className="bg-white rounded-2xl md:rounded-3xl shadow-sm border border-gray-100 overflow-hidden mb-12 mt-4 md:mt-6">
+        {/* Mobile View */}
+        <div className="md:hidden block">
+          <div className="divide-y divide-gray-100">
+            {sortedLeads.length > 0 ? (
+              sortedLeads.map((lead) => (
+                <div 
+                  key={lead.id} 
+                  className={`p-3 space-y-2 relative hover:bg-gray-50 transition-colors ${selectedLeadIds.includes(lead.id) ? 'bg-blue-50/30' : ''}`}
+                >
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex items-start gap-2">
+                      <div className="pt-0.5">
+                        <input 
+                          type="checkbox" 
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-gray-900 focus:ring-gray-900"
+                          checked={selectedLeadIds.includes(lead.id)}
+                          onChange={() => toggleSelectLead(lead.id)}
+                        />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                          <span className="font-bold text-gray-900 text-xs sm:text-sm leading-tight truncate max-w-[140px]">{lead.customerName}</span>
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-widest shrink-0 ${
+                            lead.priority === 'High' ? 'bg-red-100 text-red-700' :
+                            lead.priority === 'Medium' ? 'bg-orange-100 text-orange-700' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>
+                            {lead.priority || 'Medium'}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-500 font-mono mb-1">{lead.enquiryId}</span>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider w-fit ${
+                            lead.status === 'converted' ? 'bg-green-100 text-green-700' :
+                            lead.status === 'lost' ? 'bg-red-100 text-red-700' :
+                            'bg-blue-100 text-blue-700'
+                          }`}>
+                            {lead.status.replace(/_/g, ' ')}
+                          </span>
+                          <span className="text-[10px] font-semibold text-gray-600 truncate max-w-[100px]">
+                            {projects.find(p => p.id === lead.projectId)?.name || 'Unknown Project'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    {/* Score (if available) */}
+                    {lead.callAnalysis?.score && (
+                      <div className="shrink-0 flex flex-col items-center ml-1">
+                        <div className="w-7 h-7 rounded-full border border-gray-200 flex items-center justify-center relative bg-white shadow-sm">
+                          <span className="absolute text-[8px] font-black">{lead.callAnalysis?.score}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Footer Stats */}
+                  <div className="flex items-center justify-between pt-1.5 border-t border-gray-50 mt-1">
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-0.5 text-[9px] text-gray-500 font-medium">
+                        <User className="w-2.5 h-2.5" />
+                        <span className="truncate max-w-[70px]">
+                          {sms.find(sm => sm.uid === lead.assignedTo)?.displayName || 'Unassigned'}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-0.5 text-[9px] text-gray-500 font-medium">
+                        <Calendar className="w-2.5 h-2.5" />
+                        {lead.createdAt?.toDate ? new Date(lead.createdAt.toDate()).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: '2-digit' }) : 'N/A'}
+                      </div>
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button 
+                        onClick={() => setSelectedLead(lead)}
+                        className="p-1 bg-gray-50 text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-all"
+                      >
+                        <MessageSquare className="w-3.5 h-3.5" />
+                      </button>
+                      {(isSM || isAdmin) && (
+                        <select
+                          value={lead.status}
+                          onChange={(e) => handleUpdateStatus(lead.id, e.target.value)}
+                          className="text-[9px] font-bold bg-gray-900 text-white border-none rounded-md px-1.5 py-1 cursor-pointer hover:bg-gray-800 transition-all appearance-none ml-0.5 w-[72px] truncate"
+                        >
+                          {settings.statuses.map((s: string) => (
+                            <option key={s} value={s} className="bg-white text-gray-900">{s.replace(/_/g, ' ')}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="p-6 text-center text-gray-500 text-xs">
+                No leads match your criteria
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop View (Table) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50/50 border-b border-gray-100">
@@ -1646,6 +1917,7 @@ export default function LeadManagement() {
                     {sortConfig.key === 'priority' && (sortConfig.direction === 'asc' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />)}
                   </div>
                 </th>
+                <th className="px-8 py-5 text-[11px] font-black text-gray-500 uppercase tracking-widest">Agency / Source</th>
                 <th className="px-8 py-5 text-[11px] font-black text-gray-500 uppercase tracking-widest">Project</th>
                 {(isAdmin || isSM) && <th className="px-8 py-5 text-[11px] font-black text-gray-500 uppercase tracking-widest">Partner/Vendor</th>}
                 {isSM && <th className="px-8 py-5 text-[11px] font-black text-gray-500 uppercase tracking-widest">Vendor Notes</th>}
@@ -1689,6 +1961,16 @@ export default function LeadManagement() {
                     }`}>
                       {lead.priority || 'Medium'}
                     </span>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex flex-col">
+                      <span className="text-sm font-bold text-gray-900 truncate max-w-[150px]" title={agencies.find(a => a.id === lead.agencyId)?.name || 'Direct'}>
+                        {agencies.find(a => a.id === lead.agencyId)?.name || 'Direct'}
+                      </span>
+                      <span className="text-[10px] text-gray-400 font-medium truncate max-w-[150px]">
+                        {sources.find(s => s.id === lead.sourceId)?.name || '-'} {subsources.find(ss => ss.id === lead.subsourceId)?.name ? `/ ${subsources.find(ss => ss.id === lead.subsourceId)?.name}` : ''}
+                      </span>
+                    </div>
                   </td>
                   <td className="px-6 py-4">
                     <span className="text-sm text-gray-700">
@@ -1959,6 +2241,54 @@ export default function LeadManagement() {
                     <option value="investor">Investor</option>
                   </select>
                 </div>
+
+                <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6 p-6 bg-indigo-50 rounded-2xl border border-indigo-100">
+                  <div className="col-span-1 md:col-span-3">
+                    <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">Lead Source Hierarchy</h3>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Agency</label>
+                    <select
+                      value={editLeadData.agencyId || ''}
+                      onChange={(e) => setEditLeadData({ ...editLeadData, agencyId: e.target.value, sourceId: '', subsourceId: '' })}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all"
+                    >
+                      <option value="">Select Agency</option>
+                      {agencies.filter(a => a.partnerId === (editLeadData.partnerId || profile?.vendorCompanyId || profile?.uid)).map(a => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Source</label>
+                    <select
+                      value={editLeadData.sourceId || ''}
+                      onChange={(e) => setEditLeadData({ ...editLeadData, sourceId: e.target.value, subsourceId: '' })}
+                      disabled={!editLeadData.agencyId}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all disabled:opacity-50"
+                    >
+                      <option value="">Select Source</option>
+                      {sources.filter(s => s.agencyId === editLeadData.agencyId).map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">Subsource</label>
+                    <select
+                      value={editLeadData.subsourceId || ''}
+                      onChange={(e) => setEditLeadData({ ...editLeadData, subsourceId: e.target.value })}
+                      disabled={!editLeadData.sourceId}
+                      className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-gray-900 outline-none transition-all disabled:opacity-50"
+                    >
+                      <option value="">Select Subsource</option>
+                      {subsources.filter(ss => ss.sourceId === editLeadData.sourceId).map(ss => (
+                        <option key={ss.id} value={ss.id}>{ss.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
                 <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 p-6 bg-gray-50 rounded-2xl border border-gray-200">
                   <div className="col-span-1 md:col-span-2">
                     <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Professional Details</h3>
@@ -2566,6 +2896,51 @@ export default function LeadManagement() {
                   </select>
                 </div>
               )}
+              
+              <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-xl border border-gray-100">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Agency</label>
+                  <select
+                    value={newLead.agencyId}
+                    onChange={(e) => setNewLead({ ...newLead, agencyId: e.target.value, sourceId: '', subsourceId: '' })}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900 transition-all"
+                  >
+                    <option value="">Select Agency</option>
+                    {agencies.filter(a => a.partnerId === (newLead.partnerId || profile?.vendorCompanyId || profile?.uid)).map(a => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Source</label>
+                  <select
+                    value={newLead.sourceId}
+                    onChange={(e) => setNewLead({ ...newLead, sourceId: e.target.value, subsourceId: '' })}
+                    disabled={!newLead.agencyId}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900 transition-all disabled:opacity-50"
+                  >
+                    <option value="">Select Source</option>
+                    {sources.filter(s => s.agencyId === newLead.agencyId).map(s => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Subsource</label>
+                  <select
+                    value={newLead.subsourceId}
+                    onChange={(e) => setNewLead({ ...newLead, subsourceId: e.target.value })}
+                    disabled={!newLead.sourceId}
+                    className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900 transition-all disabled:opacity-50"
+                  >
+                    <option value="">Select Subsource</option>
+                    {subsources.filter(ss => ss.sourceId === newLead.sourceId).map(ss => (
+                      <option key={ss.id} value={ss.id}>{ss.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <div className="col-span-2">
                 <label className="block text-sm font-bold text-gray-700 mb-1">Priority</label>
                 <select
@@ -2857,6 +3232,68 @@ export default function LeadManagement() {
                   className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none resize-none"
                   placeholder={isTranscribing ? 'Transcribing your voice...' : 'Provide details about this status change...'}
                 />
+
+                <div className="pt-2 border-t border-gray-100">
+                  <label className="flex items-center gap-2 cursor-pointer mb-3">
+                    <input 
+                      type="checkbox" 
+                      checked={statusUpdate.createTask}
+                      onChange={(e) => setStatusUpdate({ ...statusUpdate, createTask: e.target.checked })}
+                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                    />
+                    <span className="text-sm font-bold text-gray-700">Create Follow-up Task</span>
+                  </label>
+                  
+                  {statusUpdate.createTask && (
+                    <div className="space-y-3 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Task Title</label>
+                        <input
+                          type="text"
+                          required={statusUpdate.createTask}
+                          value={statusUpdate.taskTitle}
+                          onChange={(e) => setStatusUpdate({ ...statusUpdate, taskTitle: e.target.value })}
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900"
+                          placeholder="e.g. Call back for negotiation"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Due Date</label>
+                          <input
+                            type="date"
+                            required={statusUpdate.createTask}
+                            value={statusUpdate.taskDueDate}
+                            onChange={(e) => setStatusUpdate({ ...statusUpdate, taskDueDate: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Assign To</label>
+                          <select
+                            required={statusUpdate.createTask}
+                            value={statusUpdate.taskAssignedTo}
+                            onChange={(e) => setStatusUpdate({ ...statusUpdate, taskAssignedTo: e.target.value })}
+                            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-gray-900"
+                          >
+                            <option value="">Select Assignee</option>
+                            <optgroup label="Sales Managers">
+                              {sms.map(sm => (
+                                <option key={sm.uid} value={sm.uid}>{sm.displayName}</option>
+                              ))}
+                            </optgroup>
+                            <optgroup label="Partners & Vendors">
+                              {partners.map(p => (
+                                <option key={p.uid} value={p.uid}>{p.companyName || p.displayName}</option>
+                              ))}
+                            </optgroup>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex gap-4 mt-8">
                   <button
                     type="button"
@@ -2890,24 +3327,35 @@ export default function LeadManagement() {
               className="bg-white w-full max-w-2xl h-full shadow-2xl flex flex-col"
             >
               {/* Header */}
-              <div className="p-6 border-b border-gray-100 flex justify-between items-start bg-gray-50/50 shrink-0">
-                <div>
-                  <h2 className="text-2xl font-bold text-gray-900 mb-1">Lead Details</h2>
-                  <p className="text-sm text-gray-500">For: {selectedLead.customerName} ({selectedLead.enquiryId})</p>
+              <div className="p-4 md:p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-gray-50/50 shrink-0">
+                <div className="flex justify-between items-start w-full md:w-auto">
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-bold text-gray-900 mb-1">Lead Details</h2>
+                    <p className="text-xs md:text-sm text-gray-500 break-words pr-2">For: {selectedLead.customerName} ({selectedLead.enquiryId})</p>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      setSelectedLead(null);
+                      setFeedbackRecordingFile(null);
+                    }}
+                    className="md:hidden p-2 hover:bg-gray-200 rounded-full transition-colors bg-white border border-gray-200 shadow-sm shrink-0"
+                  >
+                    <X className="w-5 h-5 text-gray-500" />
+                  </button>
                 </div>
-                <div className="flex items-center gap-4">
-                  <div className="flex items-center gap-1 bg-white p-1.5 rounded-xl border border-gray-200 shadow-sm mr-2">
+                <div className="flex flex-wrap items-center gap-2 md:gap-4 w-full md:w-auto">
+                  <div className="flex flex-wrap items-center gap-1 bg-white p-1 md:p-1.5 rounded-xl border border-gray-200 shadow-sm mr-0 md:mr-2">
                     <a href={`tel:${selectedLead.customerPhone}`} className="p-2 text-gray-500 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all" title="Call">
-                      <Phone className="w-5 h-5" />
+                      <Phone className="w-4 h-4 md:w-5 md:h-5" />
                     </a>
                     <a href={`sms:${selectedLead.customerPhone}`} className="p-2 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="SMS">
-                      <MessageSquare className="w-5 h-5" />
+                      <MessageSquare className="w-4 h-4 md:w-5 md:h-5" />
                     </a>
                     <a href={`https://wa.me/${selectedLead.customerPhone.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer" className="p-2 text-gray-500 hover:text-green-500 hover:bg-green-50 rounded-lg transition-all" title="WhatsApp">
-                      <Send className="w-5 h-5" />
+                      <Send className="w-4 h-4 md:w-5 md:h-5" />
                     </a>
                     <a href={`mailto:${selectedLead.customerEmail}`} className="p-2 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-lg transition-all" title="Email">
-                      <Mail className="w-5 h-5" />
+                      <Mail className="w-4 h-4 md:w-5 md:h-5" />
                     </a>
                   </div>
                   <button
@@ -2918,14 +3366,14 @@ export default function LeadManagement() {
                     className="p-2 text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all bg-white border border-gray-200 shadow-sm"
                     title="Edit Lead"
                   >
-                    <Edit2 className="w-5 h-5" />
+                    <Edit2 className="w-4 h-4 md:w-5 md:h-5" />
                   </button>
                   {(() => {
                     const { total } = calculateLeadScore(selectedLead);
                     return (
                       <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-full border border-gray-200 shadow-sm">
                         <span className="text-[10px] font-black text-gray-400 uppercase tracking-tighter">Score</span>
-                        <span className={`text-sm font-black ${
+                        <span className={`text-xs md:text-sm font-black ${
                           total > 70 ? 'text-green-600' : total > 40 ? 'text-blue-600' : 'text-orange-600'
                         }`}>{total}/100</span>
                       </div>
@@ -2936,7 +3384,7 @@ export default function LeadManagement() {
                       setSelectedLead(null);
                       setFeedbackRecordingFile(null);
                     }}
-                    className="p-2 hover:bg-gray-200 rounded-full transition-colors bg-white border border-gray-200 shadow-sm"
+                    className="hidden md:block p-2 hover:bg-gray-200 rounded-full transition-colors bg-white border border-gray-200 shadow-sm"
                   >
                     <X className="w-5 h-5 text-gray-500" />
                   </button>
@@ -2947,6 +3395,14 @@ export default function LeadManagement() {
               <div className="flex-1 overflow-y-auto p-6">
                 {/* View Toggle Tabs */}
                 <div className="flex bg-gray-100 p-1 rounded-xl mb-8 overflow-x-auto whitespace-nowrap scrollbar-hide">
+                  <button
+                    onClick={() => setFeedbackView('history')}
+                    className={`flex-1 py-2.5 px-4 text-[10px] md:text-xs font-bold rounded-lg transition-all ${
+                      feedbackView === 'history' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                  >
+                    Lead History
+                  </button>
                   <button
                     onClick={() => setFeedbackView('vendor')}
                     className={`flex-1 py-2.5 px-4 text-[10px] md:text-xs font-bold rounded-lg transition-all ${
@@ -2961,7 +3417,7 @@ export default function LeadManagement() {
                       feedbackView === 'sm' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
                     }`}
                   >
-                    SM View
+                    SM Notes
                   </button>
                   <button
                     onClick={() => setFeedbackView('call_analysis')}
@@ -3181,7 +3637,66 @@ export default function LeadManagement() {
 
                   {/* Tab Content */}
                   <div className="flex-1 overflow-y-auto">
-                    {feedbackView === 'call_analysis' ? (
+                    {feedbackView === 'history' ? (
+                      <div className="space-y-6">
+                        <h4 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4">Lead Timeline</h4>
+                        <div className="relative border-l-2 border-indigo-100 ml-4 space-y-6 pb-4">
+                          
+                          {/* Chronological History Rendering */}
+                          {[...((selectedLead.statusHistory || []) as any[])]
+                            .sort((a, b) => {
+                              const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt);
+                              const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt);
+                              return dateB.getTime() - dateA.getTime();
+                            })
+                            .map((h: any, i: number) => (
+                              <div key={i} className="relative pl-6">
+                                <div className="absolute w-3 h-3 bg-indigo-500 rounded-full -left-[7px] top-1.5 ring-4 ring-white" />
+                                <div className="bg-white border border-gray-100 rounded-xl p-4 shadow-sm">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="text-[10px] font-black uppercase text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-md tracking-wider">
+                                      {h.status?.replace(/_/g, ' ') || 'STATUS UPDATE'}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-gray-400">
+                                      {new Date(h.updatedAt?.toDate ? h.updatedAt.toDate() : h.updatedAt).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  {h.notes && (
+                                    <p className="text-sm text-gray-700 mt-2 leading-relaxed bg-gray-50 p-3 rounded-lg border border-gray-100 rounded-tl-sm">
+                                      {h.notes}
+                                    </p>
+                                  )}
+                                  <div className="mt-3 flex items-center justify-between text-[10px] text-gray-400 font-bold">
+                                    <div className="flex items-center gap-1.5">
+                                      <User className="w-3 h-3" />
+                                      {h.updatedBy || 'System'}
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                          ))}
+
+                          {/* Initial Creation Event */}
+                          <div className="relative pl-6">
+                            <div className="absolute w-3 h-3 bg-gray-300 rounded-full -left-[7px] top-1.5 ring-4 ring-white" />
+                            <div className="bg-gray-50 border border-gray-100 rounded-xl p-4">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <h5 className="text-[11px] font-black uppercase text-gray-600 mb-1">Lead Captured</h5>
+                                  <p className="text-xs text-gray-500">
+                                    Imported into system.
+                                  </p>
+                                </div>
+                                <span className="text-[10px] font-bold text-gray-400">
+                                  {new Date(selectedLead.createdAt?.toDate ? selectedLead.createdAt.toDate() : selectedLead.createdAt).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                        </div>
+                      </div>
+                    ) : feedbackView === 'call_analysis' ? (
                       <div className="space-y-6">
                         {selectedLead.callAnalysis ? (
                           <div className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm space-y-6">
@@ -3308,6 +3823,44 @@ export default function LeadManagement() {
                                  )}
                                </div>
                              </div>
+
+                             {/* Suggested Tasks */}
+                             {selectedLead.callAnalysis.suggestedTasks && selectedLead.callAnalysis.suggestedTasks.length > 0 && (
+                               <div className="space-y-4 pt-4 border-t border-gray-100">
+                                 <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center gap-2">
+                                   <CheckSquare className="w-3 h-3 text-blue-400" />
+                                   Suggested Next Steps
+                                 </label>
+                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                   {selectedLead.callAnalysis.suggestedTasks.map((task: any, i: number) => (
+                                     <div key={i} className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm flex flex-col justify-between">
+                                       <div>
+                                         <div className="flex justify-between items-start mb-2 gap-2">
+                                           <h4 className="font-bold text-sm text-gray-900 leading-tight">{task.title}</h4>
+                                           <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded uppercase shrink-0">In {task.dueInDays} days</span>
+                                         </div>
+                                         <p className="text-xs text-gray-600 mb-4">{task.description}</p>
+                                       </div>
+                                       <button
+                                         onClick={(e) => {
+                                           e.preventDefault();
+                                           setNewTask({
+                                             title: task.title,
+                                             dueDate: new Date(Date.now() + task.dueInDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+                                             assignedTo: isSM ? (profile?.uid || '') : ''
+                                           });
+                                           setFeedbackView('tasks');
+                                         }}
+                                         className="w-full text-[10px] font-bold text-blue-600 bg-blue-50 py-2 rounded-lg hover:bg-blue-100 transition-colors uppercase tracking-widest flex justify-center items-center gap-2"
+                                       >
+                                         <Calendar className="w-3 h-3" />
+                                         Schedule Task
+                                       </button>
+                                     </div>
+                                   ))}
+                                 </div>
+                               </div>
+                             )}
 
                              {/* Transcript */}
                              {selectedLead.callAnalysis.transcription && (
@@ -3601,13 +4154,173 @@ export default function LeadManagement() {
         )}
       </AnimatePresence>
 
+      {/* Bulk Delete Confirmation Modal */}
+      <AnimatePresence>
+        {isBulkDeleteModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl max-w-md w-full p-8 shadow-2xl"
+            >
+              <div className="flex flex-col items-center text-center">
+                <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center mb-6">
+                  <Trash2 className="w-10 h-10" />
+                </div>
+                <h2 className="text-2xl font-bold text-gray-900 mb-2">Bulk Delete?</h2>
+                <p className="text-sm text-gray-500 mb-8">
+                  Are you sure you want to delete <span className="font-bold text-red-600">{selectedLeadIds.length}</span> selected leads? This action is permanent and cannot be undone.
+                </p>
+                <div className="flex gap-4 w-full">
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkDeleteModalOpen(false)}
+                    className="flex-1 px-4 py-3 border border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-lg shadow-red-600/20"
+                  >
+                    Delete Leads
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Hierarchy Management Modal */}
+      <AnimatePresence>
+        {isHierarchyModalOpen && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl max-w-4xl w-full p-6 md:p-8 shadow-2xl max-h-[90vh] flex flex-col"
+            >
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h2 className="text-2xl font-black text-gray-900 leading-none">Hierarchy Management</h2>
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-2">Manage Agencies, Platforms & Vendors</p>
+                </div>
+                <button onClick={() => setIsHierarchyModalOpen(false)} className="bg-gray-50 p-3 rounded-2xl text-gray-400 hover:text-gray-900 transition-all">
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-8 overflow-hidden">
+                {/* Agency Management */}
+                <div className="bg-gray-50 rounded-2xl border border-gray-200 p-5 flex flex-col h-full overflow-hidden">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="p-2 bg-indigo-500 text-white rounded-xl">
+                      <User className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-black text-xs uppercase tracking-widest text-gray-600">Agencies</h3>
+                  </div>
+                  <form 
+                    onSubmit={(e: any) => {
+                      e.preventDefault();
+                      if (e.target.agencyName.value) {
+                        handleHierarchyAction('agency', 'add', { name: e.target.agencyName.value });
+                        e.target.agencyName.value = '';
+                      }
+                    }}
+                    className="flex gap-2 mb-4"
+                  >
+                    <input name="agencyName" required placeholder="New Agency..." className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500" />
+                    <button type="submit" className="p-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700"><Check className="w-4 h-4" /></button>
+                  </form>
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                    {agencies.filter(a => isAdmin || a.partnerId === (profile?.vendorCompanyId || profile?.uid)).map(a => (
+                      <div key={a.id} className={`p-3 rounded-xl border flex items-center justify-between transition-all ${currentAgency?.id === a.id ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+                        <button onClick={() => { setCurrentAgency(a); setCurrentSource(null); }} className="flex-1 text-left text-sm font-bold truncate pr-3">{a.name}</button>
+                        <button onClick={() => handleHierarchyAction('agency', 'delete', { id: a.id })} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Source Management */}
+                <div className={`bg-gray-50 rounded-2xl border border-gray-200 p-5 flex flex-col h-full overflow-hidden transition-opacity ${!currentAgency ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="p-2 bg-blue-500 text-white rounded-xl">
+                      <Filter className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-black text-xs uppercase tracking-widest text-gray-600">Platforms/Vendors</h3>
+                  </div>
+                  {currentAgency && <p className="text-[10px] font-bold text-indigo-400 uppercase tracking-tighter mb-4">Under: {currentAgency.name}</p>}
+                  <form 
+                    onSubmit={(e: any) => {
+                      e.preventDefault();
+                      if (e.target.sourceName.value && currentAgency) {
+                        handleHierarchyAction('source', 'add', { name: e.target.sourceName.value, agencyId: currentAgency.id });
+                        e.target.sourceName.value = '';
+                      }
+                    }}
+                    className="flex gap-2 mb-4"
+                  >
+                    <input name="sourceName" required placeholder="New Platform..." className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-blue-500" />
+                    <button type="submit" className="p-2 bg-blue-600 text-white rounded-xl hover:bg-blue-700"><Check className="w-4 h-4" /></button>
+                  </form>
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                    {sources.filter(s => s.agencyId === currentAgency?.id).map(s => (
+                      <div key={s.id} className={`p-3 rounded-xl border flex items-center justify-between transition-all ${currentSource?.id === s.id ? 'bg-blue-50 border-blue-200' : 'bg-white border-gray-100 hover:border-gray-200'}`}>
+                        <button onClick={() => setCurrentSource(s)} className="flex-1 text-left text-sm font-bold truncate pr-3">{s.name}</button>
+                        <button onClick={() => handleHierarchyAction('source', 'delete', { id: s.id })} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Subsource Management */}
+                <div className={`bg-gray-50 rounded-2xl border border-gray-200 p-5 flex flex-col h-full overflow-hidden transition-opacity ${!currentSource ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="p-2 bg-green-500 text-white rounded-xl">
+                      <MessageSquare className="w-4 h-4" />
+                    </div>
+                    <h3 className="font-black text-xs uppercase tracking-widest text-gray-600">Subsources</h3>
+                  </div>
+                  {currentSource && <p className="text-[10px] font-bold text-blue-400 uppercase tracking-tighter mb-4">Under: {currentSource.name}</p>}
+                  <form 
+                    onSubmit={(e: any) => {
+                      e.preventDefault();
+                      if (e.target.subName.value && currentSource) {
+                        handleHierarchyAction('subsource', 'add', { name: e.target.subName.value, sourceId: currentSource.id, agencyId: currentAgency?.id });
+                        e.target.subName.value = '';
+                      }
+                    }}
+                    className="flex gap-2 mb-4"
+                  >
+                    <input name="subName" required placeholder="New Subsource..." className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-green-500" />
+                    <button type="submit" className="p-2 bg-green-600 text-white rounded-xl hover:bg-green-700"><Check className="w-4 h-4" /></button>
+                  </form>
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                    {subsources.filter(ss => ss.sourceId === currentSource?.id).map(ss => (
+                      <div key={ss.id} className={`p-3 rounded-xl border border-gray-100 bg-white flex items-center justify-between transition-all hover:border-gray-200`}>
+                        <span className="flex-1 text-sm font-bold truncate pr-3">{ss.name}</span>
+                        <button onClick={() => handleHierarchyAction('subsource', 'delete', { id: ss.id })} className="text-gray-300 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* AI Chatbot */}
-      <Chatbot leads={leads} profile={profile} />
+      <Chatbot leads={leads} profile={profile} selectedLead={selectedLead} />
     </motion.div>
   );
 }
 
-function Chatbot({ leads, profile }: { leads: any[], profile: any }) {
+function Chatbot({ leads, profile, selectedLead }: { leads: any[], profile: any, selectedLead?: any }) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<{ role: string, content: string }[]>([
     { role: 'assistant', content: `Hello ${profile?.displayName}! I'm your AI Sales Assistant. How can I help you manage your leads today?` }
@@ -3632,7 +4345,7 @@ function Chatbot({ leads, profile }: { leads: any[], profile: any }) {
     setIsLoading(true);
 
     try {
-      const response = await chatWithGemini([...messages, userMessage], { user: profile, leads });
+      const response = await chatWithGemini([...messages, userMessage], { user: profile, leads, selectedLead });
       setMessages(prev => [...prev, { role: 'assistant', content: response }]);
     } catch (error) {
       console.error("Chat error:", error);

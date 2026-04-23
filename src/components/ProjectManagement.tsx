@@ -3,7 +3,7 @@ import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, serverTimest
 import { db, handleFirestoreError, OperationType } from '../firebase';
 import { useAuth } from '../AuthContext';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Building2, MapPin, Calendar, Edit2, Trash2 } from 'lucide-react';
+import { Plus, Building2, MapPin, Calendar, Edit2, Trash2, Link } from 'lucide-react';
 
 export default function ProjectManagement() {
   const { isAdmin } = useAuth();
@@ -17,6 +17,8 @@ export default function ProjectManagement() {
     location: '',
     price: '',
     configuration: '',
+    configurations: [] as { type: string; size: string; price: string }[],
+    assets: [] as { title: string; url: string; type: string }[],
     possession: '',
     propertyType: 'residential'
   });
@@ -43,6 +45,8 @@ export default function ProjectManagement() {
         location: '',
         price: '',
         configuration: '',
+        configurations: [],
+        assets: [],
         possession: '',
         propertyType: 'residential'
       });
@@ -155,6 +159,37 @@ export default function ProjectManagement() {
               </div>
             </div>
 
+            {project.configurations?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter mb-2">Configurations</p>
+                <div className="space-y-2">
+                  {project.configurations.map((c: any, idx: number) => (
+                    <div key={idx} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded-lg text-sm">
+                      <div className="flex gap-2 items-center">
+                        <span className="font-bold text-gray-900">{c.type}</span>
+                        <span className="text-gray-500 text-xs">{c.size}</span>
+                      </div>
+                      <span className="font-bold text-blue-600">{c.price}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {project.assets?.length > 0 && (
+              <div className="mb-4">
+                <p className="text-[10px] text-gray-400 uppercase font-bold tracking-tighter mb-2">Assets</p>
+                <div className="flex flex-wrap gap-2">
+                  {project.assets.map((asset: any, idx: number) => (
+                    <a key={idx} href={asset.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg text-xs font-semibold transition-colors">
+                      <Link className="w-3.5 h-3.5 text-gray-400" />
+                      {asset.title || asset.type}
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-3 pt-4 border-t border-gray-50">
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <MapPin className="w-4 h-4" />
@@ -252,6 +287,131 @@ export default function ProjectManagement() {
                   className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none resize-none"
                 />
               </div>
+              <div className="col-span-2 mt-4 pt-4 border-t border-gray-100">
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-sm font-bold text-gray-700">Configurations</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewProject({ ...newProject, configurations: [...(newProject.configurations || []), { type: '', size: '', price: '' }] })}
+                    className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                {(newProject.configurations || []).map((conf, index) => (
+                  <div key={index} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 mb-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Type (e.g. 3 BHK)"
+                      value={conf.type}
+                      onChange={(e) => {
+                        const newConfigs = [...newProject.configurations];
+                        newConfigs[index].type = e.target.value;
+                        setNewProject({ ...newProject, configurations: newConfigs });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Size (e.g. 1500 sqft)"
+                      value={conf.size}
+                      onChange={(e) => {
+                        const newConfigs = [...newProject.configurations];
+                        newConfigs[index].size = e.target.value;
+                        setNewProject({ ...newProject, configurations: newConfigs });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Price"
+                      value={conf.price}
+                      onChange={(e) => {
+                        const newConfigs = [...newProject.configurations];
+                        newConfigs[index].price = e.target.value;
+                        setNewProject({ ...newProject, configurations: newConfigs });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newConfigs = newProject.configurations.filter((_, i) => i !== index);
+                        setNewProject({ ...newProject, configurations: newConfigs });
+                      }}
+                      className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="col-span-2 pt-4 border-t border-gray-100">
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-sm font-bold text-gray-700">Project Assets</label>
+                  <button
+                    type="button"
+                    onClick={() => setNewProject({ ...newProject, assets: [...(newProject.assets || []), { title: '', url: '', type: 'Document' }] })}
+                    className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                {(newProject.assets || []).map((asset, index) => (
+                  <div key={index} className="grid grid-cols-[1fr,2fr,auto,auto] gap-2 mb-2 items-center">
+                    <select
+                      value={asset.type}
+                      onChange={(e) => {
+                        const newAssets = [...newProject.assets];
+                        newAssets[index].type = e.target.value;
+                        setNewProject({ ...newProject, assets: newAssets });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    >
+                      <option value="Document">Doc/PDF</option>
+                      <option value="Video">YouTube/Video</option>
+                      <option value="Script">Script</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Title or description"
+                      value={asset.title}
+                      onChange={(e) => {
+                        const newAssets = [...newProject.assets];
+                        newAssets[index].title = e.target.value;
+                        setNewProject({ ...newProject, assets: newAssets });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <div className="relative">
+                      <Link className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="url"
+                        placeholder="URL address"
+                        value={asset.url}
+                        onChange={(e) => {
+                          const newAssets = [...newProject.assets];
+                          newAssets[index].url = e.target.value;
+                          setNewProject({ ...newProject, assets: newAssets });
+                        }}
+                        className="w-full pl-7 pr-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newAssets = newProject.assets.filter((_, i) => i !== index);
+                        setNewProject({ ...newProject, assets: newAssets });
+                      }}
+                      className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
               <div className="col-span-2 flex gap-4 mt-8">
                 <button
                   type="button"
@@ -356,6 +516,131 @@ export default function ProjectManagement() {
                   className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 outline-none resize-none"
                 />
               </div>
+              <div className="col-span-2 mt-4 pt-4 border-t border-gray-100">
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-sm font-bold text-gray-700">Configurations</label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingProject({ ...editingProject, configurations: [...(editingProject.configurations || []), { type: '', size: '', price: '' }] })}
+                    className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                {(editingProject.configurations || []).map((conf: any, index: number) => (
+                  <div key={index} className="grid grid-cols-[1fr,1fr,1fr,auto] gap-2 mb-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Type (e.g. 3 BHK)"
+                      value={conf.type}
+                      onChange={(e) => {
+                        const newConfigs = [...editingProject.configurations];
+                        newConfigs[index].type = e.target.value;
+                        setEditingProject({ ...editingProject, configurations: newConfigs });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Size (e.g. 1500 sqft)"
+                      value={conf.size}
+                      onChange={(e) => {
+                        const newConfigs = [...editingProject.configurations];
+                        newConfigs[index].size = e.target.value;
+                        setEditingProject({ ...editingProject, configurations: newConfigs });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Price"
+                      value={conf.price}
+                      onChange={(e) => {
+                        const newConfigs = [...editingProject.configurations];
+                        newConfigs[index].price = e.target.value;
+                        setEditingProject({ ...editingProject, configurations: newConfigs });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newConfigs = editingProject.configurations.filter((_: any, i: number) => i !== index);
+                        setEditingProject({ ...editingProject, configurations: newConfigs });
+                      }}
+                      className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="col-span-2 pt-4 border-t border-gray-100">
+                <div className="flex justify-between items-center mb-3">
+                  <label className="block text-sm font-bold text-gray-700">Project Assets</label>
+                  <button
+                    type="button"
+                    onClick={() => setEditingProject({ ...editingProject, assets: [...(editingProject.assets || []), { title: '', url: '', type: 'Document' }] })}
+                    className="p-1 rounded bg-blue-50 text-blue-600 hover:bg-blue-100"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                {(editingProject.assets || []).map((asset: any, index: number) => (
+                  <div key={index} className="grid grid-cols-[1fr,2fr,auto,auto] gap-2 mb-2 items-center">
+                    <select
+                      value={asset.type}
+                      onChange={(e) => {
+                        const newAssets = [...editingProject.assets];
+                        newAssets[index].type = e.target.value;
+                        setEditingProject({ ...editingProject, assets: newAssets });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    >
+                      <option value="Document">Doc/PDF</option>
+                      <option value="Video">YouTube/Video</option>
+                      <option value="Script">Script</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Title or description"
+                      value={asset.title}
+                      onChange={(e) => {
+                        const newAssets = [...editingProject.assets];
+                        newAssets[index].title = e.target.value;
+                        setEditingProject({ ...editingProject, assets: newAssets });
+                      }}
+                      className="w-full px-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                    />
+                    <div className="relative">
+                      <Link className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="url"
+                        placeholder="URL address"
+                        value={asset.url}
+                        onChange={(e) => {
+                          const newAssets = [...editingProject.assets];
+                          newAssets[index].url = e.target.value;
+                          setEditingProject({ ...editingProject, assets: newAssets });
+                        }}
+                        className="w-full pl-7 pr-2 py-1.5 text-sm bg-gray-50 border border-gray-200 rounded-lg outline-none"
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const newAssets = editingProject.assets.filter((_: any, i: number) => i !== index);
+                        setEditingProject({ ...editingProject, assets: newAssets });
+                      }}
+                      className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+
               <div className="col-span-2 flex gap-4 mt-8">
                 <button
                   type="button"

@@ -1,10 +1,10 @@
 {
-  "projectId": "proud-plane-491508-b2",
-  "appId": "1:569008215261:web:ab94fa2ed17f04b04c7734",
-  "apiKey": "AIzaSyA4Zh11LXt5_1DOByVkgbf8HmbN82gnnAk",
-  "authDomain": "proud-plane-491508-b2.firebaseapp.com",
-  "firestoreDatabaseId": "(default)",
-  "storageBucket": "proud-plane-491508-b2.firebasestorage.app",
-  "messagingSenderId": "569008215261",
-  "measurementId": "G-7HX9J6K9GG"
+  "projectId": "gen-lang-client-0860622770",
+  "appId": "1:922207416698:web:9072878ccd4403dcd5e6c3",
+  "apiKey": "AIzaSyBzvSeR3SaLHvjBPSrzXty2lnIf8zZ1YSY",
+  "authDomain": "gen-lang-client-0860622770.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-975550f3-c027-422f-9e08-73e8ac9c4c64",
+  "storageBucket": "gen-lang-client-0860622770.firebasestorage.app",
+  "messagingSenderId": "922207416698",
+  "measurementId": ""
 }

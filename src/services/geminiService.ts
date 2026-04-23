@@ -41,7 +41,15 @@ Provide a comprehensive response in valid JSON format:
   "priority": "High" | "Medium" | "Low",
   "suggestedScore": 85, // Lead potential score (0-100)
   "keyTakeaways": "Critical strategic insights for the sales manager to win this lead",
-  "tags": ["Relevant tags for high-performance filtering"]
+  "tags": ["Relevant tags for high-performance filtering"],
+  "suggestedTasks": [
+    {
+      "title": "Specific action to take",
+      "description": "Why this action is needed and what to cover",
+      "dueInDays": 2, // Number of days from today this task should be completed
+      "assignedToType": "sm" // or "partner/vendor"
+    }
+  ]
 }
 
 Ensure the response is strictly valid JSON without any markdown formatting.`
@@ -197,6 +205,7 @@ export async function chatWithGemini(messages: { role: string, content: string }
     const systemInstruction = `You are an AI Sales Assistant for CPQL Lead Manager. 
 Your role is to help Sales Managers (SMs) and Vendors manage their leads effectively.
 Current User Context: ${JSON.stringify(context.user)}
+${context.selectedLead ? `Currently Viewed Lead (The user is looking at this lead right now, so provide highly specific assistance if they ask about it): ${JSON.stringify(context.selectedLead)}` : ''}
 Available Leads Data: ${JSON.stringify(context.leads)}
 
 Guidelines:

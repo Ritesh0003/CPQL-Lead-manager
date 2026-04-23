@@ -39,6 +39,9 @@
         "enquiryId": { "type": "string" },
         "projectId": { "type": "string" },
         "partnerId": { "type": "string", "description": "UID of the partner who dropped the lead" },
+        "agencyId": { "type": "string", "description": "ID of the agency associated with the lead" },
+        "sourceId": { "type": "string", "description": "ID of the source/platform used" },
+        "subsourceId": { "type": "string", "description": "ID of the specific subsource" },
         "smId": { "type": "string", "description": "UID of the assigned Sales Manager" },
         "customerName": { "type": "string" },
         "customerPhone": { "type": "string" },
@@ -54,6 +57,45 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["enquiryId", "projectId", "partnerId", "status"]
+    },
+    "Agency": {
+      "title": "Agency",
+      "description": "Marketing agencies working under a partner.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "partnerId"]
+    },
+    "Source": {
+      "title": "Source",
+      "description": "Platforms or vendors used by an agency.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "agencyId": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "agencyId", "partnerId"]
+    },
+    "Subsource": {
+      "title": "Subsource",
+      "description": "Specific sub-categorization of a source.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "sourceId": { "type": "string" },
+        "agencyId": { "type": "string" },
+        "partnerId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "sourceId", "agencyId", "partnerId"]
     },
     "Task": {
       "title": "Task",
@@ -90,6 +132,18 @@
     "/tasks/{taskId}": {
       "schema": "Task",
       "description": "Task records"
+    },
+    "/agencies/{agencyId}": {
+      "schema": "Agency",
+      "description": "Agency records"
+    },
+    "/sources/{sourceId}": {
+      "schema": "Source",
+      "description": "Source records"
+    },
+    "/subsources/{subsourceId}": {
+      "schema": "Subsource",
+      "description": "Subsource records"
     }
   }
 }

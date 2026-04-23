@@ -108,6 +108,27 @@ service cloud.firestore {
              data.createdBy is string;
     }
 
+    function isValidAgency(data) {
+      return data.keys().hasAll(['name', 'partnerId']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.partnerId is string;
+    }
+
+    function isValidSource(data) {
+      return data.keys().hasAll(['name', 'agencyId', 'partnerId']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.agencyId is string &&
+             data.partnerId is string;
+    }
+
+    function isValidSubsource(data) {
+      return data.keys().hasAll(['name', 'sourceId', 'agencyId', 'partnerId']) &&
+             data.name is string && data.name.size() > 0 &&
+             data.sourceId is string &&
+             data.agencyId is string &&
+             data.partnerId is string;
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -161,6 +182,21 @@ service cloud.firestore {
     match /integrations/{userId} {
       allow read: if isOwner(userId) || isAdmin();
       allow write: if isOwner(userId) || isAdmin();
+    }
+
+    match /agencies/{agencyId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || (isPartner() && request.resource.data.partnerId == request.auth.uid) || (isVendorManager() && (request.resource.data.partnerId == request.auth.uid || request.resource.data.partnerId == getUserData().get('vendorCompanyId', '')));
+    }
+
+    match /sources/{sourceId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || (isPartner() && request.resource.data.partnerId == request.auth.uid) || (isVendorManager() && (request.resource.data.partnerId == request.auth.uid || request.resource.data.partnerId == getUserData().get('vendorCompanyId', '')));
+    }
+
+    match /subsources/{subsourceId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin() || (isPartner() && request.resource.data.partnerId == request.auth.uid) || (isVendorManager() && (request.resource.data.partnerId == request.auth.uid || request.resource.data.partnerId == getUserData().get('vendorCompanyId', '')));
     }
   }
 }
